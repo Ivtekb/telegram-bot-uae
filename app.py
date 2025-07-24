@@ -237,8 +237,10 @@ def handle_horizon_select(chat_id, user_id, data):
         profile = {
             'budget': session.get('budget', ''),
             'priority_mood': session.get('priority_mood', ''),
-            'role': session.get('role', '')
+            'role': session.get('role', 'live')  # дефолт значение
         }
+        
+        print(f"Profile for AI: {profile}")  # Отладка
         
         recommendations = get_ai_recommendations(profile)
         
@@ -246,7 +248,8 @@ def handle_horizon_select(chat_id, user_id, data):
         role_names = {
             'live': 'Жить',
             'invest': 'Инвестировать', 
-            'mixed': 'Смешанный'
+            'mixed': 'Смешанный',
+            'owner': 'Продать/Сдать'
         }
         
         priority_names = {
@@ -255,12 +258,18 @@ def handle_horizon_select(chat_id, user_id, data):
             'balance': 'Баланс'
         }
         
+        # Безопасное получение данных с дефолтами
+        user_role = session.get('role', 'неизвестно')
+        user_budget = session.get('budget', 'не указан')
+        user_priority = session.get('priority_mood', 'не выбран')
+        user_horizon = session.get('horizon_months', 3)
+        
         summary = (
             f"<b>📋 Твой профиль:</b>\n"
-            f"• Цель: {role_names.get(session.get('role', ''), session.get('role', ''))}\n"
-            f"• Бюджет: {session.get('budget', '')}\n"
-            f"• Приоритет: {priority_names.get(session.get('priority_mood', ''), session.get('priority_mood', ''))}\n"
-            f"• Горизонт: {session['horizon_months']} мес\n\n"
+            f"• Цель: {role_names.get(user_role, user_role)}\n"
+            f"• Бюджет: {user_budget}\n"
+            f"• Приоритет: {priority_names.get(user_priority, user_priority)}\n"
+            f"• Горизонт: {user_horizon} мес\n\n"
             f"<b>🎯 AI рекомендации:</b>\n"
         )
         
@@ -279,6 +288,7 @@ def handle_horizon_select(chat_id, user_id, data):
     except Exception as e:
         print(f"Error in handle_horizon_select: {str(e)}")
         print(f"Session data: {user_sessions.get(user_id, {})}")
+        print(f"Data received: {data}")
         # Попробуем восстановить сессию
         if user_id in user_sessions:
             send_message(chat_id, "Что-то пошло не так. Попробуйте еще раз или /start")
