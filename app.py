@@ -54,6 +54,17 @@ def send_message(chat_id, text, reply_markup=None):
     print(f"Response status: {response.status_code}")
     return response
 
+def create_keyboard(buttons, resize=True):
+    """Создание inline клавиатуры - восстановлена"""
+    keyboard = []
+    for row in buttons:
+        keyboard_row = []
+        for btn in row:
+            keyboard_row.append({'text': btn[0], 'callback_data': btn[1]})
+        keyboard.append(keyboard_row)
+    
+    return {'inline_keyboard': keyboard}
+
 def create_reply_keyboard(buttons):
     """Создание reply клавиатуры (обычные кнопки)"""
     keyboard = []
@@ -123,17 +134,24 @@ def get_ai_recommendations(profile):
         return ["📍 <b>Подберем варианты</b> под ваши критерии"]
 
 def handle_start(chat_id, user_id):
-    """Обработка команды /start"""
-    # Очищаем предыдущую сессию при /start
-    user_sessions[user_id] = {'state': STATES['LANGUAGE_SELECT']}
-    
-    keyboard = create_keyboard([
-        [('🇷🇺 Русский', 'lang_ru'), ('🇬🇧 English', 'lang_en')]
-    ])
-    
-    send_message(chat_id, 
-        "Выберите язык / Choose language:", 
-        reply_markup=keyboard)
+    """Обработка команды /start - упрощенная версия"""
+    try:
+        print(f"=== START COMMAND ===")
+        print(f"User: {user_id}")
+        
+        # Очищаем предыдущую сессию при /start
+        user_sessions[user_id] = {'state': STATES['LANGUAGE_SELECT']}
+        
+        # Простое сообщение без клавиатуры для тестирования
+        send_message(chat_id, "🤖 Бот работает! Напишите 'русский' или 'english'")
+        
+        print(f"Start message sent")
+        
+    except Exception as e:
+        print(f"ERROR in handle_start: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        send_message(chat_id, "Ошибка старта")
 
 def handle_language_select(chat_id, user_id, data):
     """Выбор языка"""
@@ -195,14 +213,19 @@ def handle_role_select(chat_id, user_id, data):
 def handle_budget_input(chat_id, user_id, text):
     """Обработка ввода бюджета - свободный формат"""
     try:
+        print(f"=== BUDGET INPUT START ===")
+        print(f"User: {user_id}, Text: {text}")
+        
         # Проверяем наличие сессии
         if user_id not in user_sessions:
+            print("No session found!")
             send_message(chat_id, "Сессия потеряна. Используйте /start")
             return
             
         budget = validate_budget(text)
         
         if not budget:
+            print("Budget validation failed")
             send_message(chat_id, "Пожалуйста, укажите ваш бюджет")
             return
         
@@ -210,22 +233,31 @@ def handle_budget_input(chat_id, user_id, text):
         session['budget'] = budget
         session['state'] = STATES['PRIORITY_SELECT']
         
-        print(f"Budget saved: {session['budget']}")  # Отладка
-        print(f"Session after budget: {session}")  # Отладка
+        print(f"Budget saved: {session['budget']}")
+        print(f"Session after budget: {session}")
         
-        keyboard = create_keyboard([
-            [('🌊 Утро у воды', 'priority_water')],
-            [('🏙️ Доступ к центру', 'priority_city')],
-            [('⚖️ Баланс', 'priority_balance')]
+        # ПЕРЕВОДИМ НА REPLY KEYBOARD
+        keyboard = create_reply_keyboard([
+            ['🌊 Утро у воды'],
+            ['🏙️ Доступ к центру'], 
+            ['⚖️ Баланс']
         ])
         
-        send_message(chat_id,
+        print("Sending priority message with reply keyboard...")
+        
+        response = send_message(chat_id,
             "Важнее утро у воды или скорость доступа к центру?",
             reply_markup=keyboard)
             
+        print(f"Priority message sent, response: {response.status_code}")
+        print(f"Response text: {response.text}")
+        print(f"=== BUDGET INPUT END ===")
+            
     except Exception as e:
-        print(f"Error in handle_budget_input: {str(e)}")
+        print(f"EXCEPTION in handle_budget_input: {str(e)}")
         print(f"Text received: {text}")
+        import traceback
+        traceback.print_exc()
         send_message(chat_id, "Ошибка обработки бюджета. Используйте /start")
 
 def handle_priority_select(chat_id, user_id, data):
@@ -280,7 +312,51 @@ def handle_priority_select(chat_id, user_id, data):
         traceback.print_exc()
         send_message(chat_id, "Ошибка выбора приоритета. Используйте /start")
 
-def handle_horizon_text(chat_id, user_id, text):
+def handle_priority_text(chat_id, user_id, text):
+    """Обработка выбора приоритета через reply keyboard"""
+    try:
+        print(f"=== PRIORITY TEXT START ===")
+        print(f"User: {user_id}, Text: {text}")
+        
+        if user_id not in user_sessions:
+            send_message(chat_id, "Сессия потеряна. Используйте /start")
+            return
+            
+        session = user_sessions[user_id]
+        
+        # Маппинг текста на значения
+        priority_map = {
+            '🌊 Утро у воды': 'water_mornings',
+            '🏙️ Доступ к центру': 'city_access',
+            '⚖️ Баланс': 'balance'
+        }
+        
+        if text not in priority_map:
+            send_message(chat_id, "Пожалуйста, выберите один из вариантов выше")
+            return
+        
+        session['priority_mood'] = priority_map[text]
+        session['state'] = STATES['HORIZON_SELECT']
+        
+        print(f"Priority saved: {session['priority_mood']}")
+        
+        # Reply keyboard для горизонта
+        keyboard = create_reply_keyboard([
+            ['1 месяц', '3 месяца'],
+            ['6 месяцев', 'больше 6']
+        ])
+        
+        response = send_message(chat_id,
+            "Какой горизонт планирования — месяцев до решения?",
+            reply_markup=keyboard)
+        
+        print(f"Horizon message sent: {response.status_code}")
+        print(f"=== PRIORITY TEXT END ===")
+        
+    except Exception as e:
+        print(f"EXCEPTION in handle_priority_text: {str(e)}")
+        import traceback
+        traceback.print_exc()
     """Обработка выбора горизонта через reply keyboard"""
     try:
         print(f"=== HORIZON TEXT START ===")
@@ -620,7 +696,12 @@ def webhook():
     """Основной webhook для обработки сообщений"""
     try:
         data = request.get_json()
-        print(f"Received data: {data}")  # Отладка
+        print(f"=== WEBHOOK RECEIVED ===")
+        print(f"Data: {data}")
+        
+        if not data:
+            print("No data received")
+            return jsonify({'ok': True})
         
         if 'message' in data:
             message = data['message']
@@ -628,102 +709,40 @@ def webhook():
             user_id = message['from']['id']
             text = message.get('text', '')
             
+            print(f"Message from {user_id}: {text}")
+            
             # Команда /start
             if text == '/start':
                 handle_start(chat_id, user_id)
                 return jsonify({'ok': True})
             
-            # Игнорируем команды без состояния
-            if text.startswith('/') and user_id not in user_sessions:
-                handle_start(chat_id, user_id)
+            # Простая обработка текста для тестирования
+            if text.lower() in ['русский', 'russian']:
+                send_message(chat_id, "🇷🇺 Русский выбран! Напишите 'жить' или 'инвестировать'")
                 return jsonify({'ok': True})
-            
-            # Получаем состояние пользователя
-            session = user_sessions.get(user_id, {})
-            state = session.get('state', STATES['LANGUAGE_SELECT'])
-            
-            # Обработка текстового ввода по состояниям
-            if state == STATES['BUDGET_INPUT']:
-                handle_budget_input(chat_id, user_id, text)
-            elif state == STATES['HORIZON_SELECT']:
-                # Обработка reply keyboard для горизонта
-                handle_horizon_text(chat_id, user_id, text)
-            elif state in [STATES['PHONE_INPUT'], STATES['EMAIL_INPUT'], STATES['TG_INPUT']]:
-                handle_contact_input(chat_id, user_id, text)
-            else:
-                # Если нет сессии - предлагаем старт
+                
+            if text.lower() in ['жить', 'live']:
+                send_message(chat_id, "🏠 Цель: Жить. Напишите ваш бюджет (например: 5M)")
                 if user_id not in user_sessions:
-                    send_message(chat_id, "Используйте /start для начала")
-                else:
-                    # Неизвестное состояние - показываем текущий статус
-                    send_message(chat_id, f"Используйте кнопки выше или /start для перезапуска")
-        
-        elif 'callback_query' in data:
-            query = data['callback_query']
-            chat_id = query['message']['chat']['id']
-            user_id = query['from']['id']
-            callback_data = query['data']
-            message_id = query['message']['message_id']
-            
-            # ДОБАВИТЬ ЭТИ СТРОКИ:
-            print(f"=== CALLBACK DEBUG ===")
-            print(f"User: {user_id}")
-            print(f"Data: {callback_data}")
-            print(f"Session: {user_sessions.get(user_id, 'NO SESSION')}")
-            print(f"=== END DEBUG ===")
-            
-            # Отвечаем на callback_query чтобы убрать "часики"
-            answer_response = requests.post(f"{TELEGRAM_API_URL}/answerCallbackQuery", 
-                         data={'callback_query_id': query['id']})
-            print(f"Answer callback response: {answer_response.status_code}")  # Отладка
-            
-            # Если нет сессии - создаем новую для callback'ов выбора языка
-            if user_id not in user_sessions and callback_data.startswith('lang_'):
-                user_sessions[user_id] = {'state': STATES['LANGUAGE_SELECT']}
-            elif user_id not in user_sessions:
-                send_message(chat_id, "Сессия истекла. Используйте /start")
+                    user_sessions[user_id] = {}
+                user_sessions[user_id]['role'] = 'live'
+                user_sessions[user_id]['state'] = STATES['BUDGET_INPUT']
                 return jsonify({'ok': True})
             
-            # Получаем состояние пользователя
-            session = user_sessions[user_id]
-            state = session.get('state', STATES['LANGUAGE_SELECT'])
+            # ТЕСТОВЫЙ ОТВЕТ на любое сообщение
+            send_message(chat_id, f"Получил: {text}")
             
-            print(f"Current state: {state}")  # Отладка
-            
-            # Роутинг по callback_data (не зависит от состояния)
-            try:
-                if callback_data.startswith('lang_'):
-                    handle_language_select(chat_id, user_id, callback_data)
-                elif callback_data.startswith('role_'):
-                    handle_role_select(chat_id, user_id, callback_data)
-                elif callback_data.startswith('priority_'):
-                    handle_priority_select(chat_id, user_id, callback_data)
-                elif callback_data.startswith('horizon_'):
-                    handle_horizon_select(chat_id, user_id, callback_data)
-                elif callback_data.startswith('profile_'):
-                    handle_profile_confirm(chat_id, user_id, callback_data)
-                elif callback_data.startswith('contact_'):
-                    if state == STATES['CONTACT_CHANNEL']:
-                        handle_contact_channel(chat_id, user_id, callback_data)
-                    elif state == STATES['CONTACT_CONFIRM']:
-                        handle_contact_confirm(chat_id, user_id, callback_data)
-                    else:
-                        print(f"Contact callback in wrong state: {state}")
-                else:
-                    print(f"Unknown callback: {callback_data}")
-                    # НЕ отправляем сообщение пользователю для неизвестных callback'ов
-            except Exception as e:
-                print(f"Error in callback handling: {str(e)}")
-                print(f"Callback data: {callback_data}")
-                print(f"User session: {session}")
-                # НЕ отправляем сообщение об ошибке пользователю
+            return jsonify({'ok': True})
         
+        print("No message in data")
         return jsonify({'ok': True})
     
     except Exception as e:
-        print(f"Error in webhook: {str(e)}")
-        print(f"Request data: {request.get_json()}")  # Отладка ошибок
-        return jsonify({'error': str(e)}), 200  # Возвращаем 200 чтобы Telegram не повторял
+        print(f"=== WEBHOOK ERROR ===")
+        print(f"Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 200
 
 @app.route('/')
 def home():
