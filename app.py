@@ -103,9 +103,6 @@ def get_ai_recommendations(profile):
 def handle_start(chat_id, user_id):
     """Обработка команды /start"""
     # Очищаем предыдущую сессию при /start
-    if user_id in user_sessions:
-        del user_sessions[user_id]
-    
     user_sessions[user_id] = {'state': STATES['LANGUAGE_SELECT']}
     
     keyboard = create_keyboard([
@@ -465,11 +462,18 @@ def webhook():
             chat_id = query['message']['chat']['id']
             user_id = query['from']['id']
             callback_data = query['data']
+            message_id = query['message']['message_id']
             
             print(f"Callback: user_id={user_id}, data={callback_data}")  # Отладка
             
-            # Если нет сессии - предлагаем старт
-            if user_id not in user_sessions:
+            # Отвечаем на callback_query чтобы убрать "часики"
+            requests.post(f"{TELEGRAM_API_URL}/answerCallbackQuery", 
+                         data={'callback_query_id': query['id']})
+            
+            # Если нет сессии - создаем новую для callback'ов выбора языка
+            if user_id not in user_sessions and callback_data.startswith('lang_'):
+                user_sessions[user_id] = {'state': STATES['LANGUAGE_SELECT']}
+            elif user_id not in user_sessions:
                 send_message(chat_id, "Сессия истекла. Используйте /start")
                 return jsonify({'ok': True})
             
@@ -480,30 +484,35 @@ def webhook():
             print(f"Current state: {state}")  # Отладка
             
             # Роутинг по callback_data (не зависит от состояния)
-            if callback_data.startswith('lang_'):
-                handle_language_select(chat_id, user_id, callback_data)
-            elif callback_data.startswith('role_'):
-                handle_role_select(chat_id, user_id, callback_data)
-            elif callback_data.startswith('priority_'):
-                handle_priority_select(chat_id, user_id, callback_data)
-            elif callback_data.startswith('horizon_'):
-                handle_horizon_select(chat_id, user_id, callback_data)
-            elif callback_data.startswith('profile_'):
-                handle_profile_confirm(chat_id, user_id, callback_data)
-            elif callback_data.startswith('contact_'):
-                if state == STATES['CONTACT_CHANNEL']:
-                    handle_contact_channel(chat_id, user_id, callback_data)
-                elif state == STATES['CONTACT_CONFIRM']:
-                    handle_contact_confirm(chat_id, user_id, callback_data)
-            else:
-                # Неизвестный callback
-                send_message(chat_id, "Неизвестная команда. Используйте /start")
+            try:
+                if callback_data.startswith('lang_'):
+                    handle_language_select(chat_id, user_id, callback_data)
+                elif callback_data.startswith('role_'):
+                    handle_role_select(chat_id, user_id, callback_data)
+                elif callback_data.startswith('priority_'):
+                    handle_priority_select(chat_id, user_id, callback_data)
+                elif callback_data.startswith('horizon_'):
+                    handle_horizon_select(chat_id, user_id, callback_data)
+                elif callback_data.startswith('profile_'):
+                    handle_profile_confirm(chat_id, user_id, callback_data)
+                elif callback_data.startswith('contact_'):
+                    if state == STATES['CONTACT_CHANNEL']:
+                        handle_contact_channel(chat_id, user_id, callback_data)
+                    elif state == STATES['CONTACT_CONFIRM']:
+                        handle_contact_confirm(chat_id, user_id, callback_data)
+                else:
+                    # Неизвестный callback
+                    send_message(chat_id, "Используйте /start для начала")
+            except Exception as e:
+                print(f"Error in callback handling: {str(e)}")
+                send_message(chat_id, "Произошла ошибка. Используйте /start")
         
         return jsonify({'ok': True})
     
     except Exception as e:
         print(f"Error in webhook: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Request data: {request.get_json()}")  # Отладка ошибок
+        return jsonify({'error': str(e)}), 200  # Возвращаем 200 чтобы Telegram не повторял
 
 @app.route('/')
 def home():
