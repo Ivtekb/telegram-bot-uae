@@ -54,16 +54,20 @@ def send_message(chat_id, text, reply_markup=None):
     print(f"Response status: {response.status_code}")
     return response
 
-def create_keyboard(buttons, resize=True):
-    """Создание inline клавиатуры - упрощенная версия"""
+def create_reply_keyboard(buttons):
+    """Создание reply клавиатуры (обычные кнопки)"""
     keyboard = []
     for row in buttons:
         keyboard_row = []
         for btn in row:
-            keyboard_row.append({'text': btn[0], 'callback_data': btn[1]})
+            keyboard_row.append(btn)  # Только текст кнопки
         keyboard.append(keyboard_row)
     
-    return {'inline_keyboard': keyboard}
+    return {
+        'keyboard': keyboard,
+        'resize_keyboard': True,
+        'one_time_keyboard': True
+    }
 
 def validate_budget(text):
     """Свободный формат бюджета - принимаем любой текст"""
@@ -227,12 +231,17 @@ def handle_budget_input(chat_id, user_id, text):
 def handle_priority_select(chat_id, user_id, data):
     """Выбор приоритета"""
     try:
+        print(f"=== PRIORITY SELECT START ===")
+        print(f"User: {user_id}, Data: {data}")
+        
         # Проверяем наличие сессии
         if user_id not in user_sessions:
+            print("No session found!")
             send_message(chat_id, "Сессия потеряна. Используйте /start")
             return
             
         session = user_sessions[user_id]
+        print(f"Session before: {session}")
         
         priority_map = {
             'priority_water': 'water_mornings',
@@ -241,27 +250,135 @@ def handle_priority_select(chat_id, user_id, data):
         }
         
         # Сохраняем приоритет в сессии
+        old_priority = session.get('priority_mood', 'none')
         session['priority_mood'] = priority_map.get(data, 'balance')
         session['state'] = STATES['HORIZON_SELECT']
         
-        print(f"Priority saved: {session['priority_mood']}")  # Отладка
-        print(f"Session after priority: {session}")  # Отладка
+        print(f"Priority changed: {old_priority} → {session['priority_mood']}")
+        print(f"Session after: {session}")
         
-        keyboard = create_keyboard([
-            [('1 месяц', 'horizon_1'), ('3 месяца', 'horizon_3')],
-            [('6 месяцев', 'horizon_6'), ('больше 6', 'horizon_6plus')]
+        # УПРОЩЕННЫЙ REPLY KEYBOARD
+        keyboard = create_reply_keyboard([
+            ['1 месяц', '3 месяца'],
+            ['6 месяцев', 'больше 6']
         ])
         
-        send_message(chat_id,
+        print("Sending horizon message with reply keyboard...")
+        
+        response = send_message(chat_id,
             "Какой горизонт планирования — месяцев до решения?",
             reply_markup=keyboard)
             
+        print(f"Message sent, response: {response.status_code}")
+        print(f"Response text: {response.text}")
+        print(f"=== PRIORITY SELECT END ===")
+        
     except Exception as e:
-        print(f"Error in handle_priority_select: {str(e)}")
+        print(f"EXCEPTION in handle_priority_select: {str(e)}")
         print(f"Data received: {data}")
+        import traceback
+        traceback.print_exc()
         send_message(chat_id, "Ошибка выбора приоритета. Используйте /start")
 
-def handle_horizon_select(chat_id, user_id, data):
+def handle_horizon_text(chat_id, user_id, text):
+    """Обработка выбора горизонта через reply keyboard"""
+    try:
+        print(f"=== HORIZON TEXT START ===")
+        print(f"User: {user_id}, Text: {text}")
+        
+        if user_id not in user_sessions:
+            send_message(chat_id, "Сессия потеряна. Используйте /start")
+            return
+            
+        session = user_sessions[user_id]
+        
+        # Маппинг текста на значения
+        horizon_map = {
+            '1 месяц': 1,
+            '3 месяца': 3,
+            '6 месяцев': 6,
+            'больше 6': 12
+        }
+        
+        if text not in horizon_map:
+            send_message(chat_id, "Пожалуйста, выберите один из вариантов выше")
+            return
+        
+        session['horizon_months'] = horizon_map[text]
+        session['state'] = STATES['PROFILE_CONFIRM']
+        
+        print(f"Horizon saved: {session['horizon_months']}")
+        
+        # Переходим к формированию профиля
+        show_profile_summary(chat_id, user_id)
+        
+        print(f"=== HORIZON TEXT END ===")
+        
+    except Exception as e:
+        print(f"EXCEPTION in handle_horizon_text: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+def show_profile_summary(chat_id, user_id):
+    """Показать сводку профиля"""
+    try:
+        session = user_sessions[user_id]
+        
+        # Генерируем AI рекомендации
+        profile = {
+            'budget': session.get('budget', ''),
+            'priority_mood': session.get('priority_mood', ''),
+            'role': session.get('role', 'live')
+        }
+        
+        print(f"Profile for AI: {profile}")
+        recommendations = get_ai_recommendations(profile)
+        
+        # Формируем сводку профиля
+        role_names = {
+            'live': 'Жить',
+            'invest': 'Инвестировать', 
+            'mixed': 'Смешанный',
+            'owner': 'Продать/Сдать'
+        }
+        
+        priority_names = {
+            'water_mornings': 'Утро у воды',
+            'city_access': 'Доступ к центру',
+            'balance': 'Баланс'
+        }
+        
+        user_role = session.get('role', 'неизвестно')
+        user_budget = session.get('budget', 'не указан')
+        user_priority = session.get('priority_mood', 'не выбран')
+        user_horizon = session.get('horizon_months', 3)
+        
+        summary = (
+            f"<b>📋 Твой профиль:</b>\n"
+            f"• Цель: {role_names.get(user_role, user_role)}\n"
+            f"• Бюджет: {user_budget}\n"
+            f"• Приоритет: {priority_names.get(user_priority, user_priority)}\n"
+            f"• Горизонт: {user_horizon} мес\n\n"
+            f"<b>🎯 AI рекомендации:</b>\n"
+        )
+        
+        for rec in recommendations:
+            summary += f"{rec}\n"
+        
+        summary += "\nГотов фиксировать профиль?"
+        
+        # Reply keyboard для подтверждения
+        keyboard = create_reply_keyboard([
+            ['✅ Фиксировать'],
+            ['🔄 Ещё вопрос']
+        ])
+        
+        send_message(chat_id, summary, reply_markup=keyboard)
+        
+    except Exception as e:
+        print(f"Error in show_profile_summary: {str(e)}")
+        import traceback
+        traceback.print_exc()
     """Выбор горизонта планирования"""
     try:
         session = user_sessions.get(user_id, {})
@@ -528,6 +645,9 @@ def webhook():
             # Обработка текстового ввода по состояниям
             if state == STATES['BUDGET_INPUT']:
                 handle_budget_input(chat_id, user_id, text)
+            elif state == STATES['HORIZON_SELECT']:
+                # Обработка reply keyboard для горизонта
+                handle_horizon_text(chat_id, user_id, text)
             elif state in [STATES['PHONE_INPUT'], STATES['EMAIL_INPUT'], STATES['TG_INPUT']]:
                 handle_contact_input(chat_id, user_id, text)
             else:
@@ -553,8 +673,9 @@ def webhook():
             print(f"=== END DEBUG ===")
             
             # Отвечаем на callback_query чтобы убрать "часики"
-            requests.post(f"{TELEGRAM_API_URL}/answerCallbackQuery", 
+            answer_response = requests.post(f"{TELEGRAM_API_URL}/answerCallbackQuery", 
                          data={'callback_query_id': query['id']})
+            print(f"Answer callback response: {answer_response.status_code}")  # Отладка
             
             # Если нет сессии - создаем новую для callback'ов выбора языка
             if user_id not in user_sessions and callback_data.startswith('lang_'):
