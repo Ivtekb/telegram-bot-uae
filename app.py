@@ -151,72 +151,115 @@ def handle_language_select(chat_id, user_id, data):
 
 def handle_role_select(chat_id, user_id, data):
     """Выбор роли"""
-    session = user_sessions[user_id]
-    
-    role_map = {
-        'role_live': 'live',
-        'role_invest': 'invest', 
-        'role_owner': 'owner',
-        'role_mixed': 'mixed'
-    }
-    
-    session['role'] = role_map.get(data, 'live')
-    
-    # Владельцы идут по отдельной ветке (уже реализовано в Этапе 2)
-    if session['role'] == 'owner':
-        handle_owner_flow(chat_id, user_id)
-        return
-    
-    # Покупатели/инвесторы идут на сбор бюджета
-    session['state'] = STATES['BUDGET_INPUT']
-    
-    send_message(chat_id,
-        "Каков ориентир по бюджету?\n\n"
-        "<i>Диапазон (например: 3-4M AED)</i>")
+    try:
+        # Проверяем наличие сессии
+        if user_id not in user_sessions:
+            send_message(chat_id, "Сессия потеряна. Используйте /start")
+            return
+            
+        session = user_sessions[user_id]
+        
+        role_map = {
+            'role_live': 'live',
+            'role_invest': 'invest', 
+            'role_owner': 'owner',
+            'role_mixed': 'mixed'
+        }
+        
+        session['role'] = role_map.get(data, 'live')
+        
+        print(f"Role saved: {session['role']}")  # Отладка
+        print(f"Session after role: {session}")  # Отладка
+        
+        # Владельцы идут по отдельной ветке (уже реализовано в Этапе 2)
+        if session['role'] == 'owner':
+            handle_owner_flow(chat_id, user_id)
+            return
+        
+        # Покупатели/инвесторы идут на сбор бюджета
+        session['state'] = STATES['BUDGET_INPUT']
+        
+        send_message(chat_id,
+            "Каков ориентир по бюджету?\n\n"
+            "<i>Диапазон (например: 3-4M AED)</i>")
+            
+    except Exception as e:
+        print(f"Error in handle_role_select: {str(e)}")
+        print(f"Data received: {data}")
+        send_message(chat_id, "Ошибка выбора роли. Используйте /start")
 
 def handle_budget_input(chat_id, user_id, text):
     """Обработка ввода бюджета - свободный формат"""
-    budget = validate_budget(text)
-    
-    if not budget:
-        send_message(chat_id, "Пожалуйста, укажите ваш бюджет")
-        return
-    
-    session = user_sessions[user_id]
-    session['budget'] = budget
-    session['state'] = STATES['PRIORITY_SELECT']
-    
-    keyboard = create_keyboard([
-        [('🌊 Утро у воды', 'priority_water')],
-        [('🏙️ Доступ к центру', 'priority_city')],
-        [('⚖️ Баланс', 'priority_balance')]
-    ])
-    
-    send_message(chat_id,
-        "Важнее утро у воды или скорость доступа к центру?",
-        reply_markup=keyboard)
+    try:
+        # Проверяем наличие сессии
+        if user_id not in user_sessions:
+            send_message(chat_id, "Сессия потеряна. Используйте /start")
+            return
+            
+        budget = validate_budget(text)
+        
+        if not budget:
+            send_message(chat_id, "Пожалуйста, укажите ваш бюджет")
+            return
+        
+        session = user_sessions[user_id]
+        session['budget'] = budget
+        session['state'] = STATES['PRIORITY_SELECT']
+        
+        print(f"Budget saved: {session['budget']}")  # Отладка
+        print(f"Session after budget: {session}")  # Отладка
+        
+        keyboard = create_keyboard([
+            [('🌊 Утро у воды', 'priority_water')],
+            [('🏙️ Доступ к центру', 'priority_city')],
+            [('⚖️ Баланс', 'priority_balance')]
+        ])
+        
+        send_message(chat_id,
+            "Важнее утро у воды или скорость доступа к центру?",
+            reply_markup=keyboard)
+            
+    except Exception as e:
+        print(f"Error in handle_budget_input: {str(e)}")
+        print(f"Text received: {text}")
+        send_message(chat_id, "Ошибка обработки бюджета. Используйте /start")
 
 def handle_priority_select(chat_id, user_id, data):
     """Выбор приоритета"""
-    session = user_sessions[user_id]
-    
-    priority_map = {
-        'priority_water': 'water_mornings',
-        'priority_city': 'city_access',
-        'priority_balance': 'balance'
-    }
-    
-    session['priority_mood'] = priority_map.get(data, 'balance')
-    session['state'] = STATES['HORIZON_SELECT']
-    
-    keyboard = create_keyboard([
-        [('1 месяц', 'horizon_1'), ('3 месяца', 'horizon_3')],
-        [('6 месяцев', 'horizon_6'), ('больше 6', 'horizon_6plus')]
-    ])
-    
-    send_message(chat_id,
-        "Какой горизонт планирования — месяцев до решения?",
-        reply_markup=keyboard)
+    try:
+        # Проверяем наличие сессии
+        if user_id not in user_sessions:
+            send_message(chat_id, "Сессия потеряна. Используйте /start")
+            return
+            
+        session = user_sessions[user_id]
+        
+        priority_map = {
+            'priority_water': 'water_mornings',
+            'priority_city': 'city_access',
+            'priority_balance': 'balance'
+        }
+        
+        # Сохраняем приоритет в сессии
+        session['priority_mood'] = priority_map.get(data, 'balance')
+        session['state'] = STATES['HORIZON_SELECT']
+        
+        print(f"Priority saved: {session['priority_mood']}")  # Отладка
+        print(f"Session after priority: {session}")  # Отладка
+        
+        keyboard = create_keyboard([
+            [('1 месяц', 'horizon_1'), ('3 месяца', 'horizon_3')],
+            [('6 месяцев', 'horizon_6'), ('больше 6', 'horizon_6plus')]
+        ])
+        
+        send_message(chat_id,
+            "Какой горизонт планирования — месяцев до решения?",
+            reply_markup=keyboard)
+            
+    except Exception as e:
+        print(f"Error in handle_priority_select: {str(e)}")
+        print(f"Data received: {data}")
+        send_message(chat_id, "Ошибка выбора приоритета. Используйте /start")
 
 def handle_horizon_select(chat_id, user_id, data):
     """Выбор горизонта планирования"""
