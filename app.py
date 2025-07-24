@@ -33,6 +33,12 @@ STATES = {
     'READY': 'ready'
 }
 
+def get_or_create_session(user_id):
+    """Безопасное получение или создание сессии"""
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {'state': STATES['LANGUAGE_SELECT']}
+    return user_sessions[user_id]
+
 def send_message(chat_id, text, reply_markup=None):
     """Отправка сообщения с reply клавиатурой"""
     url = f"{TELEGRAM_API_URL}/sendMessage"
@@ -47,9 +53,13 @@ def send_message(chat_id, text, reply_markup=None):
         payload['reply_markup'] = reply_markup
     
     print(f"Sending to {chat_id}: {text[:50]}...")
-    response = requests.post(url, json=payload)
-    print(f"Response: {response.status_code}")
-    return response
+    try:
+        response = requests.post(url, json=payload)
+        print(f"Response: {response.status_code}")
+        return response
+    except Exception as e:
+        print(f"Send message error: {e}")
+        return None
 
 def create_reply_keyboard(buttons, one_time=True):
     """Создание reply клавиатуры"""
@@ -79,6 +89,8 @@ def validate_email(text):
 
 def validate_telegram(text):
     """Валидация Telegram username"""
+    if not text.startswith('@'):
+        text = '@' + text
     pattern = r'^@[A-Za-z0-9_]{5,32}$'
     return re.match(pattern, text)
 
@@ -113,7 +125,7 @@ def get_ai_recommendations(profile):
         
         return recommendations[:3]
     except Exception as e:
-        print(f"Error in AI recommendations: {str(e)}")
+        print(f"Error in AI recommendations: {e}")
         return ["📍 <b>Подберем варианты</b> под ваши критерии"]
 
 # === ОБРАБОТЧИКИ СОСТОЯНИЙ ===
@@ -130,8 +142,9 @@ def handle_start(chat_id, user_id):
 
 def handle_language_select(chat_id, user_id, text):
     """Обработка выбора языка"""
+    session = get_or_create_session(user_id)
+    
     if text == '🇷🇺 Русский':
-        session = user_sessions[user_id]
         session['language'] = 'ru'
         session['state'] = STATES['ROLE_SELECT']
         
@@ -156,7 +169,7 @@ def handle_language_select(chat_id, user_id, text):
 
 def handle_role_select(chat_id, user_id, text):
     """Обработка выбора роли"""
-    session = user_sessions[user_id]
+    session = get_or_create_session(user_id)
     
     role_map = {
         '🏠 Жить': 'live',
@@ -195,7 +208,7 @@ def handle_budget_input(chat_id, user_id, text):
         send_message(chat_id, "Пожалуйста, укажите ваш бюджет")
         return
     
-    session = user_sessions[user_id]
+    session = get_or_create_session(user_id)
     session['budget'] = budget
     session['state'] = STATES['PRIORITY_SELECT']
     
@@ -211,7 +224,7 @@ def handle_budget_input(chat_id, user_id, text):
 
 def handle_priority_select(chat_id, user_id, text):
     """Обработка выбора приоритета"""
-    session = user_sessions[user_id]
+    session = get_or_create_session(user_id)
     
     priority_map = {
         '🌊 Утро у воды': 'water_mornings',
@@ -238,7 +251,7 @@ def handle_priority_select(chat_id, user_id, text):
 
 def handle_horizon_select(chat_id, user_id, text):
     """Обработка выбора горизонта"""
-    session = user_sessions[user_id]
+    session = get_or_create_session(user_id)
     
     horizon_map = {
         '1 месяц': 1,
@@ -259,7 +272,7 @@ def handle_horizon_select(chat_id, user_id, text):
 
 def show_profile_summary(chat_id, user_id):
     """Показать сводку профиля с AI рекомендациями"""
-    session = user_sessions[user_id]
+    session = get_or_create_session(user_id)
     
     # Генерируем AI рекомендации
     profile = {
@@ -306,7 +319,7 @@ def show_profile_summary(chat_id, user_id):
 
 def handle_profile_confirm(chat_id, user_id, text):
     """Обработка подтверждения профиля"""
-    session = user_sessions[user_id]
+    session = get_or_create_session(user_id)
     
     if text == '✅ Фиксировать':
         session['state'] = STATES['CONTACT_CHANNEL']
@@ -337,7 +350,7 @@ def handle_profile_confirm(chat_id, user_id, text):
 
 def handle_contact_channel(chat_id, user_id, text):
     """Обработка выбора канала связи"""
-    session = user_sessions[user_id]
+    session = get_or_create_session(user_id)
     
     if text == '📱 Телефон':
         session['contact_method'] = 'phone'
@@ -369,7 +382,7 @@ def handle_contact_channel(chat_id, user_id, text):
 
 def handle_contact_input(chat_id, user_id, text):
     """Обработка ввода контактных данных"""
-    session = user_sessions[user_id]
+    session = get_or_create_session(user_id)
     state = session['state']
     
     if state == STATES['PHONE_INPUT']:
@@ -395,7 +408,7 @@ def handle_contact_input(chat_id, user_id, text):
 
 def finalize_contact(chat_id, user_id):
     """Финализация контактных данных"""
-    session = user_sessions[user_id]
+    session = get_or_create_session(user_id)
     session['state'] = STATES['CONTACT_CONFIRM']
     
     contact_info = "Проверьте контакт:\n"
@@ -417,7 +430,7 @@ def finalize_contact(chat_id, user_id):
 
 def handle_contact_confirm(chat_id, user_id, text):
     """Подтверждение отправки"""
-    session = user_sessions[user_id]
+    session = get_or_create_session(user_id)
     
     if text == '✅ Отправить':
         # Сохраняем профиль
@@ -447,10 +460,14 @@ def handle_contact_confirm(chat_id, user_id, text):
             f"⭐ Приоритет: {profile['priority_mood']}\n"
             f"📅 Горизонт: {profile['horizon_months']} мес\n\n"
             f"📞 Контакт:\n"
-            f"{profile.get('phone', '')}\n"
-            f"{profile.get('email', '')}\n"
-            f"{profile.get('telegram', '')}"
         )
+        
+        if profile.get('phone'):
+            admin_message += f"📱 {profile['phone']}\n"
+        if profile.get('email'):
+            admin_message += f"📧 {profile['email']}\n"
+        if profile.get('telegram'):
+            admin_message += f"✈️ {profile['telegram']}\n"
         
         send_message(ADMIN_ID, admin_message)
         
@@ -466,7 +483,14 @@ def handle_contact_confirm(chat_id, user_id, text):
     elif text == '🔄 Исправить':
         # Возвращаемся к выбору канала
         session['state'] = STATES['CONTACT_CHANNEL']
-        handle_contact_channel(chat_id, user_id, f"📱 Телефон")
+        
+        keyboard = create_reply_keyboard([
+            ['📱 Телефон'],
+            ['📧 Email'],
+            ['✈️ Telegram']
+        ])
+        
+        send_message(chat_id, "Как удобнее связаться?", reply_markup=keyboard)
         return True
     
     return False
@@ -493,7 +517,7 @@ def webhook():
                 return jsonify({'ok': True})
             
             # Получаем текущее состояние
-            session = user_sessions.get(user_id, {})
+            session = get_or_create_session(user_id)
             state = session.get('state', STATES['LANGUAGE_SELECT'])
             
             print(f"State: {state}")
@@ -545,7 +569,7 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "Telegram Bot UAE - Stage 3 Ready!"
+    return "🤖 UAE Property Bot - Full Working Version!"
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
