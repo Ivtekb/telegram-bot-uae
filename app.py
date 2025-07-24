@@ -34,22 +34,36 @@ STATES = {
 }
 
 def send_message(chat_id, text, reply_markup=None):
-    """Отправка сообщения с клавиатурой"""
+    """Отправка сообщения - упрощенная версия"""
     url = f"{TELEGRAM_API_URL}/sendMessage"
-    data = {
+    
+    payload = {
         'chat_id': chat_id,
         'text': text,
-        'parse_mode': 'HTML',
-        'reply_markup': json.dumps(reply_markup) if reply_markup else None
+        'parse_mode': 'HTML'
     }
-    return requests.post(url, data=data)
+    
+    if reply_markup:
+        payload['reply_markup'] = reply_markup
+    
+    print(f"Sending message to {chat_id}: {text[:50]}...")  # Отладка
+    if reply_markup:
+        print(f"With keyboard: {reply_markup}")
+    
+    response = requests.post(url, json=payload)  # Используем json=payload
+    print(f"Response status: {response.status_code}")
+    return response
 
 def create_keyboard(buttons, resize=True):
-    """Создание inline клавиатуры"""
+    """Создание inline клавиатуры - упрощенная версия"""
     keyboard = []
     for row in buttons:
-        keyboard.append([{'text': btn[0], 'callback_data': btn[1]} for btn in row])
-    return {'inline_keyboard': keyboard, 'resize_keyboard': resize}
+        keyboard_row = []
+        for btn in row:
+            keyboard_row.append({'text': btn[0], 'callback_data': btn[1]})
+        keyboard.append(keyboard_row)
+    
+    return {'inline_keyboard': keyboard}
 
 def validate_budget(text):
     """Свободный формат бюджета - принимаем любой текст"""
@@ -72,33 +86,37 @@ def validate_telegram(text):
 
 def get_ai_recommendations(profile):
     """AI рекомендации на основе профиля"""
-    budget = profile.get('budget', '')
-    priority = profile.get('priority_mood', '')
-    
-    recommendations = []
-    
-    # Анализ по бюджету
-    if '1-2M' in budget or '2-3M' in budget:
-        recommendations.append("📍 <b>JVC, Dubai Sports City</b> - отличная стартовая позиция")
-        recommendations.append("📍 <b>Dubai Marina (студии)</b> - городская энергия")
-    elif '3-4M' in budget or '4-5M' in budget:
-        recommendations.append("📍 <b>Palm Jumeirah (восточная дуга)</b> - утренний свет + вода")
-        recommendations.append("📍 <b>Dubai Marina (1-2BR)</b> - центральная локация")
-        recommendations.append("📍 <b>Business Bay</b> - динамика + инвестпотенциал")
-    elif '5M' in budget or '6M' in budget or '7M' in budget:
-        recommendations.append("📍 <b>Palm Jumeirah (премиум)</b> - прямой выход к воде")
-        recommendations.append("📍 <b>DIFC, Downtown</b> - центр финансов + культуры")
-        recommendations.append("📍 <b>Bluewaters</b> - новый уровень комфорта")
-    
-    # Анализ по приоритетам
-    if priority == 'water_mornings':
-        recommendations.append("🌊 <b>Фокус на восточные виды</b> - Palm, Marina east")
-    elif priority == 'city_access':
-        recommendations.append("🏙️ <b>Транспортные узлы</b> - Metro line, Sheikh Zayed Road")
-    else:  # balance
-        recommendations.append("⚖️ <b>Золотая середина</b> - Business Bay, JLT")
-    
-    return recommendations[:3]  # Максимум 3 рекомендации
+    try:
+        budget = profile.get('budget', '').lower()
+        priority = profile.get('priority_mood', '')
+        
+        recommendations = []
+        
+        # Анализ по бюджету
+        if any(x in budget for x in ['1m', '2m', '1-2', '2-3']):
+            recommendations.append("📍 <b>JVC, Dubai Sports City</b> - отличная стартовая позиция")
+            recommendations.append("📍 <b>Dubai Marina (студии)</b> - городская энергия")
+        elif any(x in budget for x in ['3m', '4m', '5m', '3-4', '4-5', '5m']):
+            recommendations.append("📍 <b>Palm Jumeirah (восточная дуга)</b> - утренний свет + вода")
+            recommendations.append("📍 <b>Dubai Marina (1-2BR)</b> - центральная локация")
+            recommendations.append("📍 <b>Business Bay</b> - динамика + инвестпотенциал")
+        else:
+            recommendations.append("📍 <b>Palm Jumeirah (премиум)</b> - прямой выход к воде")
+            recommendations.append("📍 <b>DIFC, Downtown</b> - центр финансов + культуры")
+            recommendations.append("📍 <b>Bluewaters</b> - новый уровень комфорта")
+        
+        # Анализ по приоритетам
+        if priority == 'water_mornings':
+            recommendations.append("🌊 <b>Фокус на восточные виды</b> - Palm, Marina east")
+        elif priority == 'city_access':
+            recommendations.append("🏙️ <b>Транспортные узлы</b> - Metro line, Sheikh Zayed Road")
+        else:  # balance
+            recommendations.append("⚖️ <b>Золотая середина</b> - Business Bay, JLT")
+        
+        return recommendations[:3]  # Максимум 3 рекомендации
+    except Exception as e:
+        print(f"Error in AI recommendations: {str(e)}")
+        return ["📍 <b>Подберем варианты</b> под ваши критерии"]
 
 def handle_start(chat_id, user_id):
     """Обработка команды /start"""
@@ -202,60 +220,70 @@ def handle_priority_select(chat_id, user_id, data):
 
 def handle_horizon_select(chat_id, user_id, data):
     """Выбор горизонта планирования"""
-    session = user_sessions[user_id]
-    
-    horizon_map = {
-        'horizon_1': 1,
-        'horizon_3': 3,
-        'horizon_6': 6,
-        'horizon_6plus': 12
-    }
-    
-    session['horizon_months'] = horizon_map.get(data, 3)
-    session['state'] = STATES['PROFILE_CONFIRM']
-    
-    # Генерируем AI рекомендации
-    profile = {
-        'budget': session.get('budget', ''),
-        'priority_mood': session.get('priority_mood', ''),
-        'role': session.get('role', '')
-    }
-    
-    recommendations = get_ai_recommendations(profile)
-    
-    # Формируем сводку профиля
-    role_names = {
-        'live': 'Жить',
-        'invest': 'Инвестировать', 
-        'mixed': 'Смешанный'
-    }
-    
-    priority_names = {
-        'water_mornings': 'Утро у воды',
-        'city_access': 'Доступ к центру',
-        'balance': 'Баланс'
-    }
-    
-    summary = (
-        f"<b>📋 Твой профиль:</b>\n"
-        f"• Цель: {role_names.get(session['role'], session['role'])}\n"
-        f"• Бюджет: {session['budget']}\n"
-        f"• Приоритет: {priority_names.get(session['priority_mood'], session['priority_mood'])}\n"
-        f"• Горизонт: {session['horizon_months']} мес\n\n"
-        f"<b>🎯 AI рекомендации:</b>\n"
-    )
-    
-    for rec in recommendations:
-        summary += f"{rec}\n"
-    
-    summary += "\nГотов фиксировать профиль?"
-    
-    keyboard = create_keyboard([
-        [('✅ Фиксировать', 'profile_confirm')],
-        [('🔄 Ещё вопрос', 'profile_edit')]
-    ])
-    
-    send_message(chat_id, summary, reply_markup=keyboard)
+    try:
+        session = user_sessions.get(user_id, {})
+        
+        horizon_map = {
+            'horizon_1': 1,
+            'horizon_3': 3,
+            'horizon_6': 6,
+            'horizon_6plus': 12
+        }
+        
+        session['horizon_months'] = horizon_map.get(data, 3)
+        session['state'] = STATES['PROFILE_CONFIRM']
+        
+        # Генерируем AI рекомендации
+        profile = {
+            'budget': session.get('budget', ''),
+            'priority_mood': session.get('priority_mood', ''),
+            'role': session.get('role', '')
+        }
+        
+        recommendations = get_ai_recommendations(profile)
+        
+        # Формируем сводку профиля
+        role_names = {
+            'live': 'Жить',
+            'invest': 'Инвестировать', 
+            'mixed': 'Смешанный'
+        }
+        
+        priority_names = {
+            'water_mornings': 'Утро у воды',
+            'city_access': 'Доступ к центру',
+            'balance': 'Баланс'
+        }
+        
+        summary = (
+            f"<b>📋 Твой профиль:</b>\n"
+            f"• Цель: {role_names.get(session.get('role', ''), session.get('role', ''))}\n"
+            f"• Бюджет: {session.get('budget', '')}\n"
+            f"• Приоритет: {priority_names.get(session.get('priority_mood', ''), session.get('priority_mood', ''))}\n"
+            f"• Горизонт: {session['horizon_months']} мес\n\n"
+            f"<b>🎯 AI рекомендации:</b>\n"
+        )
+        
+        for rec in recommendations:
+            summary += f"{rec}\n"
+        
+        summary += "\nГотов фиксировать профиль?"
+        
+        keyboard = create_keyboard([
+            [('✅ Фиксировать', 'profile_confirm')],
+            [('🔄 Ещё вопрос', 'profile_edit')]
+        ])
+        
+        send_message(chat_id, summary, reply_markup=keyboard)
+        
+    except Exception as e:
+        print(f"Error in handle_horizon_select: {str(e)}")
+        print(f"Session data: {user_sessions.get(user_id, {})}")
+        # Попробуем восстановить сессию
+        if user_id in user_sessions:
+            send_message(chat_id, "Что-то пошло не так. Попробуйте еще раз или /start")
+        else:
+            send_message(chat_id, "Сессия потеряна. Используйте /start")
 
 def handle_profile_confirm(chat_id, user_id, data):
     """Подтверждение профиля"""
@@ -464,7 +492,12 @@ def webhook():
             callback_data = query['data']
             message_id = query['message']['message_id']
             
-            print(f"Callback: user_id={user_id}, data={callback_data}")  # Отладка
+            # ДОБАВИТЬ ЭТИ СТРОКИ:
+            print(f"=== CALLBACK DEBUG ===")
+            print(f"User: {user_id}")
+            print(f"Data: {callback_data}")
+            print(f"Session: {user_sessions.get(user_id, 'NO SESSION')}")
+            print(f"=== END DEBUG ===")
             
             # Отвечаем на callback_query чтобы убрать "часики"
             requests.post(f"{TELEGRAM_API_URL}/answerCallbackQuery", 
@@ -500,12 +533,16 @@ def webhook():
                         handle_contact_channel(chat_id, user_id, callback_data)
                     elif state == STATES['CONTACT_CONFIRM']:
                         handle_contact_confirm(chat_id, user_id, callback_data)
+                    else:
+                        print(f"Contact callback in wrong state: {state}")
                 else:
-                    # Неизвестный callback
-                    send_message(chat_id, "Используйте /start для начала")
+                    print(f"Unknown callback: {callback_data}")
+                    # НЕ отправляем сообщение пользователю для неизвестных callback'ов
             except Exception as e:
                 print(f"Error in callback handling: {str(e)}")
-                send_message(chat_id, "Произошла ошибка. Используйте /start")
+                print(f"Callback data: {callback_data}")
+                print(f"User session: {session}")
+                # НЕ отправляем сообщение об ошибке пользователю
         
         return jsonify({'ok': True})
     
