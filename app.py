@@ -425,6 +425,7 @@ def webhook():
     """Основной webhook для обработки сообщений"""
     try:
         data = request.get_json()
+        print(f"Received data: {data}")  # Отладка
         
         if 'message' in data:
             message = data['message']
@@ -456,14 +457,16 @@ def webhook():
                 if user_id not in user_sessions:
                     send_message(chat_id, "Используйте /start для начала")
                 else:
-                    # Неизвестное состояние
-                    send_message(chat_id, "Используйте кнопки или /start для перезапуска")
+                    # Неизвестное состояние - показываем текущий статус
+                    send_message(chat_id, f"Используйте кнопки выше или /start для перезапуска")
         
         elif 'callback_query' in data:
             query = data['callback_query']
             chat_id = query['message']['chat']['id']
             user_id = query['from']['id']
             callback_data = query['data']
+            
+            print(f"Callback: user_id={user_id}, data={callback_data}")  # Отладка
             
             # Если нет сессии - предлагаем старт
             if user_id not in user_sessions:
@@ -474,21 +477,27 @@ def webhook():
             session = user_sessions[user_id]
             state = session.get('state', STATES['LANGUAGE_SELECT'])
             
-            # Роутинг по состояниям и callback_data
-            if state == STATES['LANGUAGE_SELECT'] and callback_data.startswith('lang_'):
+            print(f"Current state: {state}")  # Отладка
+            
+            # Роутинг по callback_data (не зависит от состояния)
+            if callback_data.startswith('lang_'):
                 handle_language_select(chat_id, user_id, callback_data)
-            elif state == STATES['ROLE_SELECT'] and callback_data.startswith('role_'):
+            elif callback_data.startswith('role_'):
                 handle_role_select(chat_id, user_id, callback_data)
-            elif state == STATES['PRIORITY_SELECT'] and callback_data.startswith('priority_'):
+            elif callback_data.startswith('priority_'):
                 handle_priority_select(chat_id, user_id, callback_data)
-            elif state == STATES['HORIZON_SELECT'] and callback_data.startswith('horizon_'):
+            elif callback_data.startswith('horizon_'):
                 handle_horizon_select(chat_id, user_id, callback_data)
-            elif state == STATES['PROFILE_CONFIRM'] and callback_data.startswith('profile_'):
+            elif callback_data.startswith('profile_'):
                 handle_profile_confirm(chat_id, user_id, callback_data)
-            elif state == STATES['CONTACT_CHANNEL'] and callback_data.startswith('contact_'):
-                handle_contact_channel(chat_id, user_id, callback_data)
-            elif state == STATES['CONTACT_CONFIRM'] and callback_data.startswith('contact_'):
-                handle_contact_confirm(chat_id, user_id, callback_data)
+            elif callback_data.startswith('contact_'):
+                if state == STATES['CONTACT_CHANNEL']:
+                    handle_contact_channel(chat_id, user_id, callback_data)
+                elif state == STATES['CONTACT_CONFIRM']:
+                    handle_contact_confirm(chat_id, user_id, callback_data)
+            else:
+                # Неизвестный callback
+                send_message(chat_id, "Неизвестная команда. Используйте /start")
         
         return jsonify({'ok': True})
     
