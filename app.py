@@ -33,12 +33,6 @@ STATES = {
     'READY': 'ready'
 }
 
-def get_or_create_session(user_id):
-    """Безопасное получение или создание сессии"""
-    if user_id not in user_sessions:
-        user_sessions[user_id] = {'state': STATES['LANGUAGE_SELECT']}
-    return user_sessions[user_id]
-
 def send_message(chat_id, text, reply_markup=None):
     """Отправка сообщения с reply клавиатурой"""
     url = f"{TELEGRAM_API_URL}/sendMessage"
@@ -142,11 +136,17 @@ def handle_start(chat_id, user_id):
 
 def handle_language_select(chat_id, user_id, text):
     """Обработка выбора языка"""
-    session = get_or_create_session(user_id)
+    print(f"Language select: user={user_id}, text={text}")
+    
+    # ВАЖНО: работаем напрямую с user_sessions
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {'state': STATES['LANGUAGE_SELECT']}
     
     if text == '🇷🇺 Русский':
-        session['language'] = 'ru'
-        session['state'] = STATES['ROLE_SELECT']
+        user_sessions[user_id]['language'] = 'ru'
+        user_sessions[user_id]['state'] = STATES['ROLE_SELECT']
+        
+        print(f"Updated session: {user_sessions[user_id]}")
         
         keyboard = create_reply_keyboard([
             ['🏠 Жить'],
@@ -169,7 +169,8 @@ def handle_language_select(chat_id, user_id, text):
 
 def handle_role_select(chat_id, user_id, text):
     """Обработка выбора роли"""
-    session = get_or_create_session(user_id)
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {'state': STATES['ROLE_SELECT']}
     
     role_map = {
         '🏠 Жить': 'live',
@@ -181,9 +182,9 @@ def handle_role_select(chat_id, user_id, text):
     if text not in role_map:
         return False
     
-    session['role'] = role_map[text]
+    user_sessions[user_id]['role'] = role_map[text]
     
-    if session['role'] == 'owner':
+    if user_sessions[user_id]['role'] == 'owner':
         send_message(chat_id, "🏠 Ветка владельца в разработке. Выберите другую роль.", 
                     reply_markup=create_reply_keyboard([
                         ['🏠 Жить'], ['📈 Инвестировать'], ['🎯 Смешанный']
@@ -191,7 +192,7 @@ def handle_role_select(chat_id, user_id, text):
         return True
     
     # Переходим к сбору бюджета
-    session['state'] = STATES['BUDGET_INPUT']
+    user_sessions[user_id]['state'] = STATES['BUDGET_INPUT']
     
     send_message(chat_id,
         "Каков ориентир по бюджету?\n\n"
@@ -208,9 +209,11 @@ def handle_budget_input(chat_id, user_id, text):
         send_message(chat_id, "Пожалуйста, укажите ваш бюджет")
         return
     
-    session = get_or_create_session(user_id)
-    session['budget'] = budget
-    session['state'] = STATES['PRIORITY_SELECT']
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
+    
+    user_sessions[user_id]['budget'] = budget
+    user_sessions[user_id]['state'] = STATES['PRIORITY_SELECT']
     
     keyboard = create_reply_keyboard([
         ['🌊 Утро у воды'],
@@ -224,7 +227,8 @@ def handle_budget_input(chat_id, user_id, text):
 
 def handle_priority_select(chat_id, user_id, text):
     """Обработка выбора приоритета"""
-    session = get_or_create_session(user_id)
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
     
     priority_map = {
         '🌊 Утро у воды': 'water_mornings',
@@ -235,8 +239,8 @@ def handle_priority_select(chat_id, user_id, text):
     if text not in priority_map:
         return False
     
-    session['priority_mood'] = priority_map[text]
-    session['state'] = STATES['HORIZON_SELECT']
+    user_sessions[user_id]['priority_mood'] = priority_map[text]
+    user_sessions[user_id]['state'] = STATES['HORIZON_SELECT']
     
     keyboard = create_reply_keyboard([
         ['1 месяц', '3 месяца'],
@@ -251,7 +255,8 @@ def handle_priority_select(chat_id, user_id, text):
 
 def handle_horizon_select(chat_id, user_id, text):
     """Обработка выбора горизонта"""
-    session = get_or_create_session(user_id)
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
     
     horizon_map = {
         '1 месяц': 1,
@@ -263,8 +268,8 @@ def handle_horizon_select(chat_id, user_id, text):
     if text not in horizon_map:
         return False
     
-    session['horizon_months'] = horizon_map[text]
-    session['state'] = STATES['PROFILE_CONFIRM']
+    user_sessions[user_id]['horizon_months'] = horizon_map[text]
+    user_sessions[user_id]['state'] = STATES['PROFILE_CONFIRM']
     
     # Показываем профиль с рекомендациями
     show_profile_summary(chat_id, user_id)
@@ -272,7 +277,7 @@ def handle_horizon_select(chat_id, user_id, text):
 
 def show_profile_summary(chat_id, user_id):
     """Показать сводку профиля с AI рекомендациями"""
-    session = get_or_create_session(user_id)
+    session = user_sessions.get(user_id, {})
     
     # Генерируем AI рекомендации
     profile = {
@@ -319,10 +324,11 @@ def show_profile_summary(chat_id, user_id):
 
 def handle_profile_confirm(chat_id, user_id, text):
     """Обработка подтверждения профиля"""
-    session = get_or_create_session(user_id)
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
     
     if text == '✅ Фиксировать':
-        session['state'] = STATES['CONTACT_CHANNEL']
+        user_sessions[user_id]['state'] = STATES['CONTACT_CHANNEL']
         
         keyboard = create_reply_keyboard([
             ['📱 Телефон'],
@@ -335,7 +341,7 @@ def handle_profile_confirm(chat_id, user_id, text):
     
     elif text == '🔄 Изменить данные':
         # Возвращаемся к выбору роли
-        session['state'] = STATES['ROLE_SELECT']
+        user_sessions[user_id]['state'] = STATES['ROLE_SELECT']
         
         keyboard = create_reply_keyboard([
             ['🏠 Жить'],
@@ -350,27 +356,28 @@ def handle_profile_confirm(chat_id, user_id, text):
 
 def handle_contact_channel(chat_id, user_id, text):
     """Обработка выбора канала связи"""
-    session = get_or_create_session(user_id)
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
     
     if text == '📱 Телефон':
-        session['contact_method'] = 'phone'
-        session['state'] = STATES['PHONE_INPUT']
+        user_sessions[user_id]['contact_method'] = 'phone'
+        user_sessions[user_id]['state'] = STATES['PHONE_INPUT']
         send_message(chat_id, 
             "Введите номер в международном формате:\n"
             "<i>+9715xxxxxxx (9-15 цифр)</i>",
             reply_markup=remove_keyboard())
     
     elif text == '📧 Email':
-        session['contact_method'] = 'email'
-        session['state'] = STATES['EMAIL_INPUT']
+        user_sessions[user_id]['contact_method'] = 'email'
+        user_sessions[user_id]['state'] = STATES['EMAIL_INPUT']
         send_message(chat_id,
             "Введите email для документов:\n"
             "<i>name@mail.com</i>",
             reply_markup=remove_keyboard())
     
     elif text == '✈️ Telegram':
-        session['contact_method'] = 'telegram'
-        session['state'] = STATES['TG_INPUT']
+        user_sessions[user_id]['contact_method'] = 'telegram'
+        user_sessions[user_id]['state'] = STATES['TG_INPUT']
         send_message(chat_id,
             "Введите @username для связи:\n"
             "<i>@username (5-32 символов)</i>",
@@ -382,34 +389,40 @@ def handle_contact_channel(chat_id, user_id, text):
 
 def handle_contact_input(chat_id, user_id, text):
     """Обработка ввода контактных данных"""
-    session = get_or_create_session(user_id)
-    state = session['state']
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
+    
+    session = user_sessions[user_id]
+    state = session.get('state')
     
     if state == STATES['PHONE_INPUT']:
         if validate_phone(text):
-            session['phone'] = text
+            user_sessions[user_id]['phone'] = text
             finalize_contact(chat_id, user_id)
         else:
             send_message(chat_id, "Неверный формат. Попробуйте: +9715xxxxxxx")
     
     elif state == STATES['EMAIL_INPUT']:
         if validate_email(text):
-            session['email'] = text
+            user_sessions[user_id]['email'] = text
             finalize_contact(chat_id, user_id)
         else:
             send_message(chat_id, "Неверный формат. Пример: name@mail.com")
     
     elif state == STATES['TG_INPUT']:
         if validate_telegram(text):
-            session['telegram'] = text
+            user_sessions[user_id]['telegram'] = text
             finalize_contact(chat_id, user_id)
         else:
             send_message(chat_id, "Неверный формат. Нужно: @username")
 
 def finalize_contact(chat_id, user_id):
     """Финализация контактных данных"""
-    session = get_or_create_session(user_id)
-    session['state'] = STATES['CONTACT_CONFIRM']
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
+    
+    user_sessions[user_id]['state'] = STATES['CONTACT_CONFIRM']
+    session = user_sessions[user_id]
     
     contact_info = "Проверьте контакт:\n"
     if 'phone' in session:
@@ -430,7 +443,10 @@ def finalize_contact(chat_id, user_id):
 
 def handle_contact_confirm(chat_id, user_id, text):
     """Подтверждение отправки"""
-    session = get_or_create_session(user_id)
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
+    
+    session = user_sessions[user_id]
     
     if text == '✅ Отправить':
         # Сохраняем профиль
@@ -449,7 +465,7 @@ def handle_contact_confirm(chat_id, user_id, text):
         }
         
         user_profiles[user_id] = profile
-        session['state'] = STATES['READY']
+        user_sessions[user_id]['state'] = STATES['READY']
         
         # Отправляем админу
         admin_message = (
@@ -482,7 +498,7 @@ def handle_contact_confirm(chat_id, user_id, text):
     
     elif text == '🔄 Исправить':
         # Возвращаемся к выбору канала
-        session['state'] = STATES['CONTACT_CHANNEL']
+        user_sessions[user_id]['state'] = STATES['CONTACT_CHANNEL']
         
         keyboard = create_reply_keyboard([
             ['📱 Телефон'],
@@ -517,10 +533,10 @@ def webhook():
                 return jsonify({'ok': True})
             
             # Получаем текущее состояние
-            session = get_or_create_session(user_id)
+            session = user_sessions.get(user_id, {})
             state = session.get('state', STATES['LANGUAGE_SELECT'])
             
-            print(f"State: {state}")
+            print(f"Current state for {user_id}: {state}")
             
             # Роутинг по состояниям
             handled = False
@@ -555,9 +571,11 @@ def webhook():
                 handled = handle_contact_confirm(chat_id, user_id, text)
             
             if not handled:
+                # Показываем текущее состояние для отладки
+                session_debug = user_sessions.get(user_id, "NO SESSION")
                 send_message(chat_id, 
-                    f"Не понял. Используйте кнопки выше или /start для перезапуска.\n"
-                    f"<i>Состояние: {state}</i>")
+                    f"Не понял '{text}'. Используйте кнопки выше или /start\n\n"
+                    f"<i>Debug: state={state}, session={session_debug}</i>")
         
         return jsonify({'ok': True})
     
